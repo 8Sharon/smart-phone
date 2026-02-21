@@ -125,9 +125,9 @@ Deno.serve(async (req) => {
       return { ...phone, match_score };
     });
 
-    // Sort and take top 3
+    // Sort and return all matched phones ranked
     scored.sort((a, b) => b.match_score - a.match_score);
-    const top3 = scored.slice(0, 3).map((phone, i) => ({
+    const top3 = scored.map((phone, i) => ({
       ...phone,
       justification: generateJustification(phone, answers.usage, answers.secondary, i),
     }));
