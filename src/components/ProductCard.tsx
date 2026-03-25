@@ -35,6 +35,26 @@ const MiniBar = ({ score }: { score: number }) => (
 );
 
 const ProductCard = ({ phone, rank }: ProductCardProps) => {
+  // Generate a local image path based on brand and model if image_url isn't provided
+  // Example: brand "Samsung", model "Galaxy S24 Ultra" -> "galaxy-s24-ultra.png"
+  const getLocalImage = () => {
+    if (phone.image_url) return phone.image_url;
+    
+    // Create a slug from brand and model, or just model if brand is already in the model string
+    const fullString = phone.model.toLowerCase().includes(phone.brand.toLowerCase()) 
+      ? phone.model 
+      : `${phone.brand} ${phone.model}`;
+      
+    const slug = fullString.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    
+    // We know these specific paths exist in the public/phones directory, 
+    // but we can try to load them by slug. If it fails, we fall back to generic.
+    // Since we're in Vite, we can just use the absolute path /phones/slug.png
+    return `/phones/${slug}.png`;
+  };
+
+  const currentImage = getLocalImage();
+
   return (
     <div
       className="glass-card overflow-hidden group hover:border-primary/30 transition-all duration-300 opacity-0 animate-fade-in-up flex flex-col"
@@ -43,7 +63,11 @@ const ProductCard = ({ phone, rank }: ProductCardProps) => {
       {/* Image area */}
       <div className="relative h-48 bg-gradient-to-br from-muted/50 to-background flex items-center justify-center overflow-hidden">
         <img
-          src={phone.image_url || phoneImage}
+          src={currentImage}
+          onError={(e) => {
+            // Fallback to generic image if local phone specific image doesn't exist
+            (e.target as HTMLImageElement).src = phoneImage;
+          }}
           alt={`${phone.brand} ${phone.model}`}
           className="h-36 w-auto object-contain drop-shadow-2xl transition-transform duration-500 group-hover:scale-110"
         />

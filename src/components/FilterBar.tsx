@@ -7,6 +7,8 @@ export interface Filters {
   budget: string;
   secondary: string;
   platform: string;
+  brand: string;
+  formFactor: string;
 }
 
 interface FilterBarProps {
@@ -80,6 +82,34 @@ const FilterBar = ({ filters, onChange }: FilterBarProps) => {
         ]}
         selected={filters.platform}
         onSelect={(id) => update("platform", id)}
+      />
+
+      <FilterChip
+        label="Brand Preference"
+        options={[
+          { id: "any", label: "Any Brand", icon: "🏢" },
+          { id: "apple", label: "Apple", icon: "🍏" },
+          { id: "samsung", label: "Samsung", icon: "📱" },
+          { id: "google", label: "Google", icon: "🔍" },
+          { id: "huawei", label: "Huawei", icon: "🌺" },
+          { id: "tecno", label: "Tecno", icon: "📱" },
+          { id: "lg", label: "LG", icon: "📺" },
+          { id: "other", label: "Other Brands", icon: "✨" },
+        ]}
+        selected={filters.brand}
+        onSelect={(id) => update("brand", id)}
+      />
+
+      <FilterChip
+        label="Form Factor"
+        options={[
+          { id: "any", label: "Any Size", icon: "📏" },
+          { id: "compact", label: "Compact (<6.4\")", icon: "🤏" },
+          { id: "large", label: "Large (6.4\"+)", icon: "👐" },
+          { id: "foldable", label: "Foldable", icon: "📖" },
+        ]}
+        selected={filters.formFactor}
+        onSelect={(id) => update("formFactor", id)}
       />
     </div>
   );
