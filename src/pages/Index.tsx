@@ -1,11 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
-import { Smartphone, ArrowRight, Loader2, Search } from "lucide-react";
+import { Smartphone, ArrowRight, Loader2, Search, LogOut, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import FilterBar, { type Filters } from "@/components/FilterBar";
 import ProductCard from "@/components/ProductCard";
+import AdvancedFilterBar, { type AdvancedFilters } from "@/components/AdvancedFilterBar";
+import PhoneSearch from "@/components/PhoneSearch";
+import PhoneComparison from "@/components/PhoneComparison";
+import UserProfile from "@/components/UserProfile";
+import ThemeToggle from "@/components/ThemeToggle";
+import { saveRecommendation } from "@/lib/phoneService";
 import phonesData from "@/data/phones.json";
+import { useNavigate } from "react-router-dom";
 
 function getBudgetRange(budget: string): [number, number] {
   switch (budget) {
@@ -66,216 +73,290 @@ function calculateOfflineRecommendations(answers: Filters) {
     filtered = filtered.filter(p => p.os === 'Android');
   }
 
-  if (answers.brand !== 'any') {
-    if (answers.brand === 'other') {
-      filtered = filtered.filter(p => !['Apple', 'Samsung', 'Google', 'Huawei', 'Tecno', 'LG'].includes(p.brand));
-    } else {
-      filtered = filtered.filter(p => p.brand.toLowerCase() === answers.brand.toLowerCase());
-    }
-  }
+  filtered = filtered.filter(p => p.price_usd >= minPrice && p.price_usd <= maxPrice);
 
-  if (answers.formFactor !== 'any') {
-    if (answers.formFactor === 'compact') {
-      filtered = filtered.filter(p => p.screen_size_inches < 6.4);
-    } else if (answers.formFactor === 'large') {
-      filtered = filtered.filter(p => p.screen_size_inches >= 6.4 && !p.model.toLowerCase().includes('fold') && !p.model.toLowerCase().includes('flip'));
-    } else if (answers.formFactor === 'foldable') {
-      filtered = filtered.filter(p => p.model.toLowerCase().includes('fold') || p.model.toLowerCase().includes('flip'));
-    }
-  }
-
-  filtered = filtered.filter(p => p.price_usd >= minPrice * 0.9 && p.price_usd <= maxPrice * 1.05);
-
-  const scored = filtered.map(phone => {
-    const rawScore = (
-      phone.camera_score * weights.camera +
-      phone.performance_score * weights.performance +
-      phone.battery_score * weights.battery +
-      phone.display_score * weights.display +
-      phone.build_quality_score * weights.build
-    ) / totalWeight;
-
-    let valueBonus = 0;
-    if (answers.secondary === 'value') {
-      const avgScore = (phone.camera_score + phone.performance_score + phone.battery_score + phone.display_score + phone.build_quality_score) / 5;
-      valueBonus = (avgScore / (phone.price_usd / 100)) * 2;
-    }
-
-    const match_score = Math.min(99, ((rawScore + valueBonus) / 10) * 100);
-    return { ...phone, match_score };
-  });
-
-  scored.sort((a, b) => b.match_score - a.match_score);
-  return scored.slice(0, 3).map((phone, i) => ({
+  const scored = filtered.map(phone => ({
     ...phone,
-    justification: generateJustification(phone, answers.usage, answers.secondary, i),
+    score:
+      (phone.camera_score * weights.camera +
+        phone.performance_score * weights.performance +
+        phone.battery_score * weights.battery +
+        phone.display_score * weights.display +
+        phone.build_quality_score * weights.build) /
+      totalWeight,
   }));
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((phone, rank) => ({
+      ...phone,
+      justification: generateJustification(phone, answers.usage, answers.secondary, rank),
+    }));
 }
 
-const defaultFilters: Filters = {
-  usage: "social",
-  battery: "important",
-  budget: "mid",
-  secondary: "value",
-  platform: "any",
-  brand: "any",
-  formFactor: "any",
-};
-
-const Index = () => {
-  const [started, setStarted] = useState(false);
-  const [filters, setFilters] = useState<Filters>(defaultFilters);
-  const [results, setResults] = useState<any[]>([]);
+function Index() {
+  const navigate = useNavigate();
+  const [quizStarted, setQuizStarted] = useState(false);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [showProfile, setShowProfile] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({
+    brands: [],
+    priceMin: 0,
+    priceMax: 2000,
+    os: [],
+    features: [],
+  });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedForComparison, setSelectedForComparison] = useState<any[]>([]);
+  const [showComparison, setShowComparison] = useState(false);
 
-  const fetchRecommendations = useCallback(async (f: Filters) => {
-    setLoading(true);
-    try {
-      // First try hitting the API
-      const { data, error } = await supabase.functions.invoke("recommend", {
-        body: { answers: f },
-      });
-      if (error) throw error;
-      setResults(data.recommendations || []);
-    } catch (e) {
-      console.log("API failed, falling back to offline data", e);
-      // If offline or API fails, fall back to offline local data
-      const offlineRecs = calculateOfflineRecommendations(f);
-      setResults(offlineRecs);
-      toast.success("Using offline recommendations.");
-    } finally {
-      setHasSearched(true);
-      setLoading(false);
-    }
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getSession();
+      setUser(data.session?.user);
+    };
+    fetchUser();
   }, []);
 
-  // Auto-fetch when filters change after first search
-  useEffect(() => {
-    if (started) {
-      const timeout = setTimeout(() => fetchRecommendations(filters), 400);
-      return () => clearTimeout(timeout);
-    }
-  }, [filters, started, fetchRecommendations]);
+  const handleQuizComplete = useCallback(async (answers: Filters) => {
+    setLoading(true);
+    try {
+      const recs = calculateOfflineRecommendations(answers);
+      setRecommendations(recs);
 
-  if (!started) {
-    return (
-      <section className="relative min-h-screen flex items-center justify-center gradient-bg overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.03]" style={{
-          backgroundImage: `linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)`,
-          backgroundSize: '60px 60px'
-        }} />
-        <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-secondary/50 mb-8 opacity-0 animate-fade-in-up">
-            <Smartphone className="w-4 h-4 text-primary" />
-            <span className="text-sm font-mono text-muted-foreground">Knowledge-Based Decision Support</span>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 opacity-0 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-            <span className="text-foreground">Smart</span>
-            <span className="glow-text">Pick</span>
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-4 opacity-0 animate-fade-in-up font-light" style={{ animationDelay: '0.2s' }}>
-            Stop guessing. Start choosing.
-          </p>
-          <p className="text-sm md:text-base text-muted-foreground/70 max-w-xl mx-auto mb-12 opacity-0 animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
-            Tell us how you use your phone and your budget. Our algorithm finds the perfect phones — ranked with images, prices, and scores.
-          </p>
-          <div className="opacity-0 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-            <Button
-              onClick={() => setStarted(true)}
-              size="lg"
-              className="group bg-primary text-primary-foreground hover:bg-primary/90 font-mono text-base px-8 py-6 rounded-xl animate-pulse-glow"
-            >
-              Find My Phone
-              <ArrowRight className="ml-2 w-5 h-5 transition-transform group-hover:translate-x-1" />
-            </Button>
-          </div>
-          <div className="mt-20 grid grid-cols-3 gap-8 max-w-md mx-auto opacity-0 animate-fade-in-up" style={{ animationDelay: '0.5s' }}>
-            {[
-              { value: "20+", label: "Phones" },
-              { value: "5", label: "Criteria" },
-              { value: "Top 3", label: "Picks" },
-            ].map((stat) => (
-              <div key={stat.label} className="text-center">
-                <div className="text-2xl font-mono font-bold text-primary">{stat.value}</div>
-                <div className="text-xs text-muted-foreground mt-1">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
+      // Save recommendation if user is logged in
+      if (user) {
+        await saveRecommendation(user.id, answers, recs);
+      }
+
+      toast.success("Here are your personalized recommendations!");
+    } catch (error) {
+      console.error("Error generating recommendations:", error);
+      toast.error("Failed to generate recommendations");
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  const filteredRecommendations = recommendations.filter((phone) => {
+    // Advanced filters
+    if (advancedFilters.brands.length > 0 && !advancedFilters.brands.includes(phone.brand)) {
+      return false;
+    }
+    if (phone.price_usd < advancedFilters.priceMin || phone.price_usd > advancedFilters.priceMax) {
+      return false;
+    }
+    if (advancedFilters.os.length > 0 && !advancedFilters.os.includes(phone.os)) {
+      return false;
+    }
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch =
+        phone.brand.toLowerCase().includes(query) ||
+        phone.model.toLowerCase().includes(query) ||
+        phone.chipset.toLowerCase().includes(query);
+      if (!matchesSearch) return false;
+    }
+
+    return true;
+  });
+
+  const handleAddToComparison = (phone: any) => {
+    if (selectedForComparison.length < 3 && !selectedForComparison.find((p) => p.id === phone.id)) {
+      setSelectedForComparison([...selectedForComparison, phone]);
+      toast.success(`${phone.model} added to comparison`);
+    } else if (selectedForComparison.find((p) => p.id === phone.id)) {
+      setSelectedForComparison(selectedForComparison.filter((p) => p.id !== phone.id));
+      toast.success(`${phone.model} removed from comparison`);
+    } else {
+      toast.error("Max 3 phones for comparison");
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    toast.success("Signed out successfully");
+  };
 
   return (
-    <div className="min-h-screen gradient-bg">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
       {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <button onClick={() => setStarted(false)} className="flex items-center gap-2 group">
-            <Smartphone className="w-5 h-5 text-primary" />
-            <span className="font-mono font-bold text-foreground text-lg">
-              Smart<span className="text-primary">Pick</span>
-            </span>
-          </button>
-          <span className="text-xs font-mono text-muted-foreground hidden sm:block">
-            Optimized Smartphone Acquisition
-          </span>
+      <header className="border-b border-border backdrop-blur-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                <Smartphone className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold glow-text">SMART PICK</h1>
+                <p className="text-xs text-muted-foreground">Knowledge-Based Phone Finder</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/compare")}
+              >
+                Compare
+              </Button>
+              {user ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowProfile(true)}
+                  >
+                    <Settings className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSignOut}
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" onClick={() => navigate("/auth")}>Sign In</Button>
+              )}
+            </div>
+          </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-8">
-          {/* Filters sidebar */}
-          <aside className="lg:sticky lg:top-24 lg:self-start">
-            <FilterBar filters={filters} onChange={setFilters} />
-          </aside>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {!quizStarted ? (
+          /* Hero Section */
+          <div className="text-center py-12 md:py-20">
+            <div className="mb-8">
+              <h2 className="text-5xl md:text-6xl font-bold mb-4">
+                Find Your Perfect Phone
+              </h2>
+              <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+                Answer a few simple questions and get personalized smartphone
+                recommendations tailored to your needs, budget, and lifestyle.
+              </p>
+            </div>
+            <Button
+              size="lg"
+              onClick={() => setQuizStarted(true)}
+              className="gap-2"
+            >
+              Start Quiz <ArrowRight className="w-5 h-5" />
+            </Button>
+          </div>
+        ) : loading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+            <p className="text-lg text-muted-foreground">Analyzing your preferences...</p>
+          </div>
+        ) : recommendations.length > 0 ? (
+          /* Results Section */
+          <div>
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold mb-4">Your Personalized Recommendations</h2>
+              <p className="text-muted-foreground mb-6">
+                Based on your preferences, here are the best phones for you
+              </p>
 
-          {/* Results grid */}
-          <main>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="font-mono font-bold text-foreground text-xl">
-                  {hasSearched ? "Your Top Picks" : "Set your preferences"}
-                </h2>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {hasSearched
-                    ? `${results.length} phones matched — ranked by your priorities`
-                    : "Adjust the filters and we'll find your perfect phone"}
-                </p>
-              </div>
-              {loading && <Loader2 className="w-5 h-5 text-primary animate-spin" />}
+              {/* Search */}
+              <PhoneSearch onSearch={setSearchQuery} />
+
+              {/* Advanced Filters */}
+              <AdvancedFilterBar
+                onFilterChange={setAdvancedFilters}
+                onClear={() => setAdvancedFilters({
+                  brands: [],
+                  priceMin: 0,
+                  priceMax: 2000,
+                  os: [],
+                  features: [],
+                })}
+              />
             </div>
 
-            {!hasSearched && !loading && (
-              <div className="glass-card p-16 text-center">
-                <Search className="w-10 h-10 text-muted-foreground/30 mx-auto mb-4" />
-                <p className="text-muted-foreground text-sm font-mono">
-                  Your recommendations will appear here
-                </p>
+            {/* Comparison Selection */}
+            {selectedForComparison.length > 0 && (
+              <div className="mb-6 p-4 bg-secondary/20 rounded-lg border border-border">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">
+                    Selected for Comparison: {selectedForComparison.length}/3
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowComparison(true)}
+                  >
+                    View Comparison
+                  </Button>
+                </div>
               </div>
             )}
 
-            {hasSearched && results.length === 0 && !loading && (
-              <div className="glass-card p-16 text-center">
-                <p className="text-muted-foreground text-sm font-mono">
-                  No phones matched. Try adjusting your filters.
-                </p>
-              </div>
-            )}
-
-            {results.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {results.map((phone, i) => (
-                  <ProductCard key={phone.id} phone={phone} rank={i} />
+            {/* Results Grid */}
+            {filteredRecommendations.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredRecommendations.map((phone, index) => (
+                  <ProductCard
+                    key={phone.id}
+                    phone={phone}
+                    rank={index + 1}
+                    onViewDetails={() => navigate(`/phone/${phone.id}`)}
+                    onAddToComparison={() => handleAddToComparison(phone)}
+                    isSelected={selectedForComparison.some((p) => p.id === phone.id)}
+                  />
                 ))}
               </div>
+            ) : (
+              <div className="text-center py-12">
+                <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-lg text-muted-foreground">No phones match your filters</p>
+              </div>
             )}
-          </main>
-        </div>
-      </div>
+
+            {/* New Quiz Button */}
+            <div className="mt-12 text-center">
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  setQuizStarted(false);
+                  setRecommendations([]);
+                  setSelectedForComparison([]);
+                }}
+              >
+                Start New Quiz
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </main>
+
+      {/* Modals */}
+      {quizStarted && recommendations.length === 0 && !loading && (
+        <FilterBar onQuizComplete={handleQuizComplete} />
+      )}
+
+      {showComparison && selectedForComparison.length > 0 && (
+        <PhoneComparison
+          phones={selectedForComparison}
+          onClose={() => setShowComparison(false)}
+        />
+      )}
+
+      {showProfile && user && (
+        <UserProfile userId={user.id} onClose={() => setShowProfile(false)} />
+      )}
     </div>
   );
-};
+}
 
 export default Index;
