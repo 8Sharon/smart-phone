@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
-import { Smartphone, ArrowRight, Loader2, Search, LogOut, Settings } from "lucide-react";
+import { Smartphone, ArrowRight, Loader2, GitCompare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import FilterBar, { type Filters } from "@/components/FilterBar";
+import Quiz from "@/components/Quiz";
+import { type Filters } from "@/components/Quiz";
 import ProductCard from "@/components/ProductCard";
 import AdvancedFilterBar, { type AdvancedFilters } from "@/components/AdvancedFilterBar";
 import PhoneSearch from "@/components/PhoneSearch";
 import PhoneComparison from "@/components/PhoneComparison";
 import UserProfile from "@/components/UserProfile";
 import ThemeToggle from "@/components/ThemeToggle";
+import AuthDialog from "@/components/AuthDialog";
 import { saveRecommendation } from "@/lib/phoneService";
 import phonesData from "@/data/phones.json";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 function getBudgetRange(budget: string): [number, number] {
   switch (budget) {
@@ -97,11 +100,12 @@ function calculateOfflineRecommendations(answers: Filters) {
 
 function Index() {
   const navigate = useNavigate();
-  const [quizStarted, setQuizStarted] = useState(false);
+  const { user } = useAuth();
+  const [showQuiz, setShowQuiz] = useState(false);
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({
     brands: [],
     priceMin: 0,
@@ -113,19 +117,12 @@ function Index() {
   const [selectedForComparison, setSelectedForComparison] = useState<any[]>([]);
   const [showComparison, setShowComparison] = useState(false);
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      const { data } = await supabase.auth.getSession();
-      setUser(data.session?.user);
-    };
-    fetchUser();
-  }, []);
-
   const handleQuizComplete = useCallback(async (answers: Filters) => {
     setLoading(true);
     try {
       const recs = calculateOfflineRecommendations(answers);
       setRecommendations(recs);
+      setShowQuiz(false);
 
       // Save recommendation if user is logged in
       if (user) {
@@ -180,7 +177,6 @@ function Index() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
     toast.success("Signed out successfully");
   };
 
@@ -190,7 +186,11 @@ function Index() {
       <header className="border-b border-border backdrop-blur-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => {
+              setShowQuiz(false);
+              setRecommendations([]);
+              setSelectedForComparison([]);
+            }}>
               <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
                 <Smartphone className="w-6 h-6 text-primary" />
               </div>
@@ -201,13 +201,16 @@ function Index() {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate("/compare")}
-              >
-                Compare
-              </Button>
+              {recommendations.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/compare")}
+                  className="gap-1"
+                >
+                  <GitCompare className="w-4 h-4" /> Compare
+                </Button>
+              )}
               {user ? (
                 <>
                   <Button
@@ -215,18 +218,18 @@ function Index() {
                     size="sm"
                     onClick={() => setShowProfile(true)}
                   >
-                    <Settings className="w-4 h-4" />
+                    Profile
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleSignOut}
                   >
-                    <LogOut className="w-4 h-4" />
+                    Sign Out
                   </Button>
                 </>
               ) : (
-                <Button size="sm" onClick={() => navigate("/auth")}>Sign In</Button>
+                <Button size="sm" onClick={() => setShowAuth(true)}>Sign In</Button>
               )}
             </div>
           </div>
@@ -234,7 +237,7 @@ function Index() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {!quizStarted ? (
+        {!showQuiz && recommendations.length === 0 ? (
           /* Hero Section */
           <div className="text-center py-12 md:py-20">
             <div className="mb-8">
@@ -248,7 +251,7 @@ function Index() {
             </div>
             <Button
               size="lg"
-              onClick={() => setQuizStarted(true)}
+              onClick={() => setShowQuiz(true)}
               className="gap-2"
             >
               Start Quiz <ArrowRight className="w-5 h-5" />
@@ -259,7 +262,7 @@ function Index() {
             <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
             <p className="text-lg text-muted-foreground">Analyzing your preferences...</p>
           </div>
-        ) : recommendations.length > 0 ? (
+        ) : (
           /* Results Section */
           <div>
             <div className="mb-8">
@@ -317,8 +320,23 @@ function Index() {
               </div>
             ) : (
               <div className="text-center py-12">
-                <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-lg text-muted-foreground">No phones match your filters</p>
+                <Button
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => {
+                    setAdvancedFilters({
+                      brands: [],
+                      priceMin: 0,
+                      priceMax: 2000,
+                      os: [],
+                      features: [],
+                    });
+                    setSearchQuery("");
+                  }}
+                >
+                  Clear Filters
+                </Button>
               </div>
             )}
 
@@ -328,7 +346,7 @@ function Index() {
                 variant="outline"
                 size="lg"
                 onClick={() => {
-                  setQuizStarted(false);
+                  setShowQuiz(false);
                   setRecommendations([]);
                   setSelectedForComparison([]);
                 }}
@@ -337,12 +355,15 @@ function Index() {
               </Button>
             </div>
           </div>
-        ) : null}
+        )}
       </main>
 
       {/* Modals */}
-      {quizStarted && recommendations.length === 0 && !loading && (
-        <FilterBar onQuizComplete={handleQuizComplete} />
+      {showQuiz && (
+        <Quiz
+          onComplete={handleQuizComplete}
+          onCancel={() => setShowQuiz(false)}
+        />
       )}
 
       {showComparison && selectedForComparison.length > 0 && (
@@ -354,6 +375,13 @@ function Index() {
 
       {showProfile && user && (
         <UserProfile userId={user.id} onClose={() => setShowProfile(false)} />
+      )}
+
+      {showAuth && (
+        <AuthDialog
+          onClose={() => setShowAuth(false)}
+          onSuccess={() => setShowAuth(false)}
+        />
       )}
     </div>
   );
