@@ -1,220 +1,119 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
-
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.1"
-  }
   public: {
     Tables: {
-      phones: {
+      user_recommendations: {
         Row: {
-          battery_mah: number
-          battery_score: number
-          brand: string
-          build_quality_score: number
-          camera_score: number
-          chipset: string | null
-          created_at: string
-          display_score: number
-          id: string
-          image_url: string | null
-          model: string
-          os: string | null
-          performance_score: number
-          price_usd: number
-          ram_gb: number
-          release_year: number | null
-          screen_size_inches: number
-          storage_gb: number
-          summary: string | null
-        }
+          id: string;
+          user_id: string;
+          quiz_answers: Record<string, any>;
+          recommendations: Record<string, any>[];
+          created_at: string;
+          updated_at: string;
+        };
         Insert: {
-          battery_mah?: number
-          battery_score?: number
-          brand: string
-          build_quality_score?: number
-          camera_score?: number
-          chipset?: string | null
-          created_at?: string
-          display_score?: number
-          id?: string
-          image_url?: string | null
-          model: string
-          os?: string | null
-          performance_score?: number
-          price_usd: number
-          ram_gb?: number
-          release_year?: number | null
-          screen_size_inches?: number
-          storage_gb?: number
-          summary?: string | null
-        }
+          id?: string;
+          user_id: string;
+          quiz_answers: Record<string, any>;
+          recommendations: Record<string, any>[];
+          created_at?: string;
+          updated_at?: string;
+        };
         Update: {
-          battery_mah?: number
-          battery_score?: number
-          brand?: string
-          build_quality_score?: number
-          camera_score?: number
-          chipset?: string | null
-          created_at?: string
-          display_score?: number
-          id?: string
-          image_url?: string | null
-          model?: string
-          os?: string | null
-          performance_score?: number
-          price_usd?: number
-          ram_gb?: number
-          release_year?: number | null
-          screen_size_inches?: number
-          storage_gb?: number
-          summary?: string | null
-        }
-        Relationships: []
-      }
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      [_ in never]: never
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
-}
-
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
-
-export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
-    }
-    ? R
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
-    : never
-
-export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
-    }
-    ? I
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
-    : never
-
-export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
-    }
-    ? U
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
-    : never
-
-export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
-
-export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
-
-export const Constants = {
-  public: {
-    Enums: {},
-  },
-} as const
+          id?: string;
+          user_id?: string;
+          quiz_answers?: Record<string, any>;
+          recommendations?: Record<string, any>[];
+          updated_at?: string;
+        };
+      };
+      phone_reviews: {
+        Row: {
+          id: string;
+          phone_id: string;
+          user_id: string;
+          rating: number;
+          title: string;
+          content: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          phone_id: string;
+          user_id: string;
+          rating: number;
+          title: string;
+          content: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          rating?: number;
+          title?: string;
+          content?: string;
+          updated_at?: string;
+        };
+      };
+      phone_pricing: {
+        Row: {
+          id: string;
+          phone_id: string;
+          retailer: string;
+          price: number;
+          url: string;
+          last_updated: string;
+        };
+        Insert: {
+          id?: string;
+          phone_id: string;
+          retailer: string;
+          price: number;
+          url: string;
+          last_updated?: string;
+        };
+        Update: {
+          price?: number;
+          url?: string;
+          last_updated?: string;
+        };
+      };
+      user_saved_phones: {
+        Row: {
+          id: string;
+          user_id: string;
+          phone_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          phone_id: string;
+          created_at?: string;
+        };
+      };
+      user_preferences: {
+        Row: {
+          id: string;
+          user_id: string;
+          theme: string;
+          language: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          theme?: string;
+          language?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          theme?: string;
+          language?: string;
+          updated_at?: string;
+        };
+      };
+    };
+  };
+};
